@@ -140,7 +140,7 @@ a { color: inherit; }
 .produto__foto { position: relative; aspect-ratio: 1; background: var(--fundo-suave); }
 .produto__foto img { width: 100%; height: 100%; object-fit: cover; }
 .selo {
-  position: absolute; top: 12px; left: 12px;
+  position: absolute; bottom: 12px; left: 12px;
   padding: 5px 10px; border-radius: var(--radius-sm);
   background: #fff; color: #2A2A2A;
   font: 500 12px/1.2 var(--texto); letter-spacing: .04em; text-transform: uppercase;
