@@ -2,15 +2,42 @@
 (function () {
   const $ = (s) => document.querySelector(s);
   const real = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  const porId = Object.fromEntries(PRODUTOS.map((p) => [p.id, p]));
-  const CHAVE = "escup-sacola";
+  const valor = (v) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-  // ---------- sacola (guardada no navegador) ----------
+  const NATAL_LISTA = typeof NATAL !== "undefined" ? NATAL : [];
+  const TODOS = [...PRODUTOS, ...NATAL_LISTA];
+  const porId = Object.fromEntries(TODOS.map((p) => [p.id, p]));
+  const CHAVE = "escup-sacola-v2";
+
+  // Opções (modelos/tamanhos) e preço de cada uma
+  const opcoesDe = (p) => (p.opcoes || []).map((o) => (typeof o === "string" ? { nome: o } : o));
+  const precoOpcao = (p, i) => {
+    const o = opcoesDe(p)[i];
+    return o && o.preco != null ? o.preco : p.preco;
+  };
+  const precoMinimo = (p) => {
+    const ops = opcoesDe(p);
+    return ops.length ? Math.min(...ops.map((_, i) => precoOpcao(p, i))) : p.preco;
+  };
+
+  // ---------- sacola: chave "id" ou "id::indiceDaOpcao" ----------
   let sacola = {};
   try { sacola = JSON.parse(localStorage.getItem(CHAVE)) || {}; } catch (e) {}
-  for (const id in sacola) if (!porId[id] || porId[id].estoque === 0) delete sacola[id];
+  const partes = (k) => { const [id, op] = k.split("::"); return { p: porId[id], op: op == null ? null : +op }; };
+  for (const k in sacola) { const { p } = partes(k); if (!p || p.estoque === 0 || p.preco == null) delete sacola[k]; }
   const salvar = () => { try { localStorage.setItem(CHAVE, JSON.stringify(sacola)); } catch (e) {} };
   const limite = (p) => (p.estoque == null ? 99 : p.estoque);
+  const qtdDoProduto = (id) => Object.keys(sacola).filter((k) => k.split("::")[0] === id).reduce((s, k) => s + sacola[k], 0);
+
+  function unitario(k) {
+    const { p, op } = partes(k);
+    let v = op == null ? p.preco : precoOpcao(p, op);
+    if (p.desconto && qtdDoProduto(p.id) >= p.desconto.aPartirDe) v = p.desconto.preco;
+    return v;
+  }
+  const nomeItem = (k) => { const { p, op } = partes(k); return op == null ? p.nome : `${p.nome} (${opcoesDe(p)[op].nome})`; };
+  const totalSacola = () => Object.keys(sacola).reduce((s, k) => s + sacola[k] * unitario(k), 0);
 
   function aviso(txt) {
     const el = $("[data-aviso]");
@@ -20,86 +47,111 @@
     aviso.t = setTimeout(() => el.classList.remove("mostrar"), 2600);
   }
 
-  function adicionar(id) {
-    const p = porId[id];
-    const atual = sacola[id] || 0;
-    if (atual >= limite(p)) {
+  function adicionar(k) {
+    const { p } = partes(k);
+    if (qtdDoProduto(p.id) >= limite(p)) {
       aviso(p.estoque === 1 ? "Só temos 1 unidade desta peça." : `Temos ${p.estoque} unidades desta peça.`);
       return;
     }
-    sacola[id] = atual + 1;
+    sacola[k] = (sacola[k] || 0) + 1;
     salvar(); atualizarSacola();
-    aviso(`${p.nome} foi para a sacola.`);
+    aviso(`${nomeItem(k)} foi para a sacola.`);
   }
 
-  // ---------- vitrine ----------
-  const categorias = ["Todas", ...new Set(PRODUTOS.map((p) => p.categoria))];
-  let filtro = "Todas";
-
+  // ---------- vitrines ----------
   function selo(p) {
     if (p.estoque === 0) return '<span class="selo selo--esgotado">Esgotado</span>';
-    if (p.estoque == null) return '<span class="selo">Sob encomenda</span>';
+    if (p.estoque == null) return "";
     return `<span class="selo">${p.estoque === 1 ? "1 unidade disponível" : p.estoque + " unidades"}</span>`;
   }
 
-  function desenharFiltros() {
-    const box = $("[data-filtros]");
-    if (categorias.length <= 2) { box.hidden = true; return; }
-    box.innerHTML = categorias
-      .map((c) => `<button type="button" aria-pressed="${c === filtro}" data-cat="${c}">${c}</button>`)
-      .join("");
+  function precoHTML(p, i) {
+    if (p.preco == null) return '<span class="preco preco--consulta">Sob orçamento</span>';
+    const v = i == null ? (opcoesDe(p).length ? precoOpcao(p, 0) : p.preco) : precoOpcao(p, i);
+    return `<span class="preco"><small>R$</small>${valor(v)}</span>`;
   }
 
-  function desenharVitrine() {
-    const lista = PRODUTOS.filter((p) => filtro === "Todas" || p.categoria === filtro);
-    $("[data-vitrine]").innerHTML = lista.map((p) => `
+  function cartao(p) {
+    const ops = opcoesDe(p);
+    const seletor = ops.length
+      ? `<label class="opcao"><span class="sr">Modelo de ${esc(p.nome)}</span>
+           <select data-opcao="${p.id}">${ops.map((o, i) => `<option value="${i}">${esc(o.nome)}${o.preco != null && ops.some((x) => x.preco !== o.preco) ? " · " + real(o.preco) : ""}</option>`).join("")}</select>
+         </label>`
+      : "";
+    let botao;
+    if (p.preco == null) botao = `<button class="btn btn--azul" type="button" data-orcamento="${p.id}">Pedir orçamento</button>`;
+    else if (p.estoque === 0) botao = `<button class="btn btn--azul" type="button" disabled>Esgotado</button>`;
+    else botao = `<button class="btn btn--azul" type="button" data-add="${p.id}">Adicionar</button>`;
+    return `
       <li class="produto">
         <div class="produto__foto">
-          <img src="${p.foto}" alt="${p.nome}" loading="lazy" width="800" height="800">
+          <img src="${p.foto}" alt="${esc(p.nome)}" loading="lazy" width="800" height="800">
           ${selo(p)}
         </div>
         <div class="produto__info">
-          <span class="produto__cat">${p.categoria}</span>
-          <h3 class="produto__nome">${p.nome}</h3>
-          <p class="produto__detalhe">${p.detalhe || ""}</p>
+          <span class="produto__cat">${esc(p.categoria)}</span>
+          <h3 class="produto__nome">${esc(p.nome)}</h3>
+          <p class="produto__detalhe">${esc(p.detalhe || "")}</p>
+          ${seletor}
           <div class="produto__base">
-            <span class="preco"><small>R$</small>${p.preco.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-            <button class="btn btn--azul" type="button" data-add="${p.id}" ${p.estoque === 0 ? "disabled" : ""}>
-              ${p.estoque === 0 ? "Esgotado" : "Adicionar"}
-            </button>
+            <span data-preco="${p.id}">${precoHTML(p)}</span>
+            ${botao}
           </div>
         </div>
-      </li>`).join("");
+      </li>`;
+  }
+
+  function criarVitrine(lista, vitrineSel, filtrosSel) {
+    const estado = { filtro: "Todas" };
+    const cats = ["Todas", ...new Set(lista.map((p) => p.categoria))];
+    function desenhar() {
+      const box = $(filtrosSel);
+      if (cats.length <= 2) box.hidden = true;
+      else box.innerHTML = cats.map((c) => `<button type="button" aria-pressed="${c === estado.filtro}" data-cat="${esc(c)}" data-alvo="${vitrineSel}">${esc(c)}</button>`).join("");
+      $(vitrineSel).innerHTML = lista.filter((p) => estado.filtro === "Todas" || p.categoria === estado.filtro).map(cartao).join("");
+    }
+    desenhar();
+    return { estado, desenhar };
+  }
+
+  const vitrines = {};
+  vitrines["[data-vitrine]"] = criarVitrine(PRODUTOS, "[data-vitrine]", "[data-filtros]");
+  if (NATAL_LISTA.length) {
+    vitrines["[data-vitrine-natal]"] = criarVitrine(NATAL_LISTA, "[data-vitrine-natal]", "[data-filtros-natal]");
+  } else {
+    document.querySelectorAll("[data-so-natal]").forEach((el) => el.remove());
   }
 
   // ---------- painel da sacola ----------
   function atualizarSacola() {
-    const ids = Object.keys(sacola);
-    const qtdTotal = ids.reduce((s, id) => s + sacola[id], 0);
-    const total = ids.reduce((s, id) => s + sacola[id] * porId[id].preco, 0);
+    const ks = Object.keys(sacola);
+    const qtdTotal = ks.reduce((s, k) => s + sacola[k], 0);
 
     const badge = $("[data-qtd-sacola]");
     badge.textContent = qtdTotal;
     badge.hidden = qtdTotal === 0;
 
-    $("[data-vazia]").hidden = ids.length > 0;
-    $("[data-rodape-sacola]").hidden = ids.length === 0;
-    $("[data-total]").textContent = real(total);
-    $("[data-itens]").innerHTML = ids.map((id) => {
-      const p = porId[id], q = sacola[id];
+    $("[data-vazia]").hidden = ks.length > 0;
+    $("[data-rodape-sacola]").hidden = ks.length === 0;
+    $("[data-total]").textContent = real(totalSacola());
+    $("[data-itens]").innerHTML = ks.map((k) => {
+      const { p, op } = partes(k), q = sacola[k];
+      const u = unitario(k);
+      const cheio = op == null ? p.preco : precoOpcao(p, op);
       return `
         <li class="item">
           <img src="${p.foto}" alt="">
           <div>
-            <h3>${p.nome}</h3>
-            <p>${real(p.preco)}</p>
+            <h3>${esc(p.nome)}</h3>
+            ${op != null ? `<p class="item__opcao">${esc(opcoesDe(p)[op].nome)}</p>` : ""}
+            <p>${real(u)}${u < cheio ? ` <span class="item__desc">preço de ${p.desconto.aPartirDe}+ peças</span>` : ""}</p>
             <div class="qtd">
-              <button type="button" data-menos="${id}" aria-label="Diminuir quantidade de ${p.nome}">−</button>
+              <button type="button" data-menos="${k}" aria-label="Diminuir quantidade de ${esc(nomeItem(k))}">−</button>
               <span>${q}</span>
-              <button type="button" data-mais="${id}" aria-label="Aumentar quantidade de ${p.nome}" ${q >= limite(p) ? "disabled" : ""}>+</button>
+              <button type="button" data-mais="${k}" aria-label="Aumentar quantidade de ${esc(nomeItem(k))}" ${qtdDoProduto(p.id) >= limite(p) ? "disabled" : ""}>+</button>
             </div>
           </div>
-          <button type="button" class="item__rem" data-remover="${id}">Remover</button>
+          <button type="button" class="item__rem" data-remover="${k}">Remover</button>
         </li>`;
     }).join("");
   }
@@ -118,26 +170,35 @@
   }
 
   function finalizar() {
-    const ids = Object.keys(sacola);
-    if (!ids.length) return;
-    const linhas = ids.map((id) => {
-      const p = porId[id];
-      return `• ${sacola[id]}x ${p.nome} — ${real(p.preco * sacola[id])}`;
-    });
-    const total = ids.reduce((s, id) => s + sacola[id] * porId[id].preco, 0);
+    const ks = Object.keys(sacola);
+    if (!ks.length) return;
+    const linhas = ks.map((k) => `• ${sacola[k]}x ${nomeItem(k)} — ${real(unitario(k) * sacola[k])}`);
     abrirWhats(
-      `Oi, ESCUP! Quero fazer este pedido pelo site:\n\n${linhas.join("\n")}\n\nTotal: ${real(total)}\n\nPodem confirmar a disponibilidade e como fica o pagamento e a entrega?`
+      `Oi, ESCUP! Quero fazer este pedido pelo site:\n\n${linhas.join("\n")}\n\nTotal: ${real(totalSacola())}\n\nPodem confirmar a disponibilidade e como fica o pagamento e a entrega?`
     );
   }
 
   // ---------- eventos ----------
+  document.addEventListener("change", (e) => {
+    const s = e.target.closest("[data-opcao]");
+    if (!s) return;
+    const p = porId[s.dataset.opcao];
+    document.querySelector(`[data-preco="${p.id}"]`).innerHTML = precoHTML(p, +s.value);
+  });
+
   document.addEventListener("click", (e) => {
     const t = e.target.closest("button, [data-fechar-sacola]");
     if (!t) return;
     const d = t.dataset;
-    if (d.add) adicionar(d.add);
-    else if (d.cat) { filtro = d.cat; desenharFiltros(); desenharVitrine(); }
-    else if (d.mais) adicionar(d.mais);
+    if (d.add) {
+      const s = document.querySelector(`[data-opcao="${d.add}"]`);
+      adicionar(s ? `${d.add}::${s.value}` : d.add);
+    } else if (d.orcamento) {
+      const p = porId[d.orcamento];
+      abrirWhats(`Oi, ESCUP! ${p.mensagem || `Quero um orçamento de: ${p.nome}.`}`);
+    } else if (d.cat) {
+      const v = vitrines[d.alvo]; v.estado.filtro = d.cat; v.desenhar();
+    } else if (d.mais) adicionar(d.mais);
     else if (d.menos) { if (--sacola[d.menos] <= 0) delete sacola[d.menos]; salvar(); atualizarSacola(); }
     else if (d.remover) { delete sacola[d.remover]; salvar(); atualizarSacola(); }
     else if ("abrirSacola" in d) abrir();
@@ -160,7 +221,5 @@
   $("[data-ano]").textContent = new Date().getFullYear();
   $("[data-cidade]").textContent = LOJA.cidade;
 
-  desenharFiltros();
-  desenharVitrine();
   atualizarSacola();
 })();

@@ -1,4 +1,8 @@
 :root {
+  --natal-vinho: #6E1423;
+  --natal-vinho-escuro: #4E0D18;
+  --natal-dourado: #F2C9A0;
+  --natal-creme: #F5E9D3;
   --azul: #0065D3;
   --azul-profundo: #004EC4;
   --menta: #7BE2C0;
@@ -225,6 +229,38 @@ a { color: inherit; }
   transition: transform .25s, visibility .25s; pointer-events: none; visibility: hidden;
 }
 .aviso.mostrar { transform: translate(-50%, 0); visibility: visible; }
+
+/* Catálogo de Natal */
+.pilula-natal {
+  display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px;
+  padding: 8px 16px; border-radius: 999px; text-decoration: none;
+  background: var(--natal-vinho); color: var(--natal-creme);
+  font: 600 14px/1.2 var(--display); box-shadow: 0 6px 18px rgba(78,13,24,.3);
+}
+.pilula-natal:hover { background: var(--natal-vinho-escuro); }
+.natal {
+  color: var(--natal-creme);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(242,201,160,.16), transparent 35%),
+    radial-gradient(circle at 95% 100%, rgba(242,201,160,.12), transparent 30%),
+    linear-gradient(160deg, var(--natal-vinho) 0%, var(--natal-vinho-escuro) 100%);
+}
+.natal h2 { color: #fff; }
+.rotulo--dourado { color: var(--natal-dourado); }
+.natal__sub { margin-top: 10px; max-width: 52ch; color: var(--natal-creme); }
+.filtros--natal button { background: transparent; border-color: rgba(245,233,211,.4); color: var(--natal-creme); }
+.filtros--natal button[aria-pressed="true"] { background: var(--natal-dourado); border-color: var(--natal-dourado); color: var(--natal-vinho-escuro); }
+.natal .produto { border-color: transparent; color: var(--tinta); }
+
+.opcao { display: block; margin-top: 10px; }
+.opcao select {
+  width: 100%; height: 42px; padding: 0 12px; border-radius: var(--radius-md);
+  border: 1.5px solid var(--linha); background: #fff; color: var(--tinta); font: 500 14px var(--texto);
+}
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.preco--consulta { font: 600 14px var(--display); color: var(--tinta-suave); white-space: nowrap; }
+.item__opcao { font-weight: 500; color: var(--tinta) !important; }
+.item__desc { font-size: 12px; color: #0B6B4A; font-weight: 600; }
 
 @media (max-width: 860px) {
   .topo__nav { display: none; }
