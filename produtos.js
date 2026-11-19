@@ -6,10 +6,10 @@
 const LOJA = {
   // Número do WhatsApp que recebe os pedidos: só números, com 55 + DDD.
   // Exemplo: "5568999998888". Enquanto estiver vazio, o botão avisa.
-  whatsapp: "",
+  whatsapp: "5568999640692",
 
   // @ do Instagram, sem o @. Exemplo: "escup3d"
-  instagram: "",
+  instagram: "escupi3d",
 
   cidade: "Rio Branco, Acre",
 };
